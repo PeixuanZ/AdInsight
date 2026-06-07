@@ -1,4 +1,4 @@
-# AdLens
+# AdInsight
 
 Built AdLens, a multimodal causal-inspired attribution framework for e-commerce video advertisements using AdsTrace (2.8K ads). Leveraged CLIP, LLM-based content understanding, and Double Machine Learning to estimate the conversion impact of ad components and identify temporal conversion triggers associated with ROI and CVR improvements.
 
