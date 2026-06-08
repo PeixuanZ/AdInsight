@@ -1,0 +1,6 @@
+treatment,n_treated,n_control,mean_ictr_treated,mean_ictr_control,lift_%,sig_windows
+T_peak_in_last_quarter,1378,1455,0.03843,0.00855,349.4,17
+T_cta_late,337,2496,0.02317,0.02307,0.4,1
+T_cta_early,1174,1659,0.02239,0.02357,-5.0,1
+T_promo_first_3s,740,2093,0.02048,0.024,-14.7,2
+T_promo_first_5s,957,1876,0.01998,0.02467,-19.0,4

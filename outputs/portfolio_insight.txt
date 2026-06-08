@@ -1,0 +1,19 @@
+**Strategic Memo: Enhancing E-commerce Video Ad Effectiveness**
+
+To: E-commerce Marketing Team
+
+Based on our recent analysis of 2833 video ads, we have identified several key findings that can inform our advertising strategy.
+
+The single most important timing insight is the placement of conversion peak in the last quarter of ad duration, which yields a +349% lift in mean ICTR. This suggests that the optimal ad structure should focus on creating a strong late-second-act experience to drive conversions.
+
+The fact that 73.6% of conversion peaks are triggered by unclassified content ("other") implies that our current CTA placement (first half) and promotional content approach may not be the primary drivers of conversion. Instead, we should focus on optimizing ad structures that can effectively leverage other types of content to capture users' attention.
+
+To maximize our ROI, I recommend adopting an inverted-ad-structure: start with a brief, non-promotional opening segment (approx. 2-3 seconds), followed by a more engaging and informative main content section, and finally conclude with a clear CTA in the second half.
+
+For future A/B testing, I propose exploring the impact of varying ad durations on conversion rates to further optimize our late-second-act experience. Can we push the conversion peak to even later in the ad? How does this affect user engagement and overall performance?
+
+By incorporating these insights into our advertising strategy, we can significantly enhance our e-commerce video ad effectiveness and drive more conversions.
+
+Best regards,
+[Your Name]
+Senior E-commerce Advertising Strategist

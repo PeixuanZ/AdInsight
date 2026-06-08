@@ -1,0 +1,37 @@
+# Virtual environment
+.adenv/
+venv/
+env/
+
+# Data — raw data
+data/raw/
+
+# 
+data/processed/*.parquet
+data/processed/*.csv
+
+# 
+*.pt
+*.bin
+*.safetensors
+__pycache__/
+*.pyc
+.cache/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# MacOS
+.DS_Store
+
+# 
+.env
+
+# outputs 
+outputs/*.png
+
+# HuggingFace 缓存
+data/raw/downloads/
+data/raw/.cache/
+data/raw/Xiuze___ads_trace/

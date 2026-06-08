@@ -1,0 +1,40 @@
+{
+  "treatments": [
+    "T_has_promo",
+    "T_has_cta",
+    "T_has_price",
+    "T_early_promo",
+    "T_promo_first_3s",
+    "T_promo_first_5s",
+    "T_promo_last_5s",
+    "T_cta_early",
+    "T_cta_late",
+    "T_peak_in_last_quarter"
+  ],
+  "treatments_skip": [
+    "T_has_urgency"
+  ],
+  "continuous_treatments": [
+    "T_promo_cta_gap"
+  ],
+  "outcomes": [
+    "Y_mean_ictr",
+    "Y_max_ictr",
+    "Y_late_early_ratio",
+    "Y_ictr_slope"
+  ],
+  "confounders": [
+    "vis_product_close-up",
+    "vis_person_using_product",
+    "vis_lifestyle_scene",
+    "vis_text_overlay_promotion",
+    "vis_before_and_after_comparison",
+    "vis_celebrity_endorsement",
+    "vis_discount_price_display",
+    "vis_unboxing_scene",
+    "duration_sec",
+    "speech_rate",
+    "n_segments",
+    "n_frames"
+  ]
+}
