@@ -145,8 +145,8 @@ Uses econml.dml.CausalForestDML to estimate heterogeneous treatment effects (CAT
 
 - Temporal Trigger Discovery
 
-  - scipy.signal.find_peaks detects ICTR peaks per ad (prominence threshold = 0.5$\sigma$)
-  - ICTR series resampled to 20 bins for cross-ad alignment
-  - Per-bin t-tests compare treated vs control groups
-  - Content 3 seconds before each peak classified by keyword type
+  - scipy.signal.find_peaks detects ICTR peaks per ad.
+  - ICTR series resampled to 20 bins for cross-ad alignment.
+  - Per-bin t-tests compare treated vs control groups.
+  - Content 3 seconds before each peak classified by keyword type.
 
