@@ -1,0 +1,44 @@
+{
+  "best_model": "gbm",
+  "cv_results": {
+    "logistic": {
+      "auc_mean": 0.7604301218415639,
+      "auc_std": 0.016604743944817205
+    },
+    "gbm": {
+      "auc_mean": 0.9330344903266946,
+      "auc_std": 0.010078267109598811
+    },
+    "rf": {
+      "auc_mean": 0.9098013055546128,
+      "auc_std": 0.014265374667137105
+    }
+  },
+  "features": [
+    "mean_ictr",
+    "max_ictr",
+    "ictr_std",
+    "ictr_slope",
+    "late_early_ratio",
+    "early_mean_ictr",
+    "late_mean_ictr",
+    "n_segments",
+    "speech_rate",
+    "segment_density",
+    "n_price_kw",
+    "n_promo_kw",
+    "n_urgency_kw",
+    "n_product_kw",
+    "n_cta_kw",
+    "has_price",
+    "has_promo",
+    "has_urgency",
+    "has_cta",
+    "first_promo_time",
+    "first_cta_time",
+    "duration_sec",
+    "n_frames",
+    "transcript_duration"
+  ],
+  "n_features": 24
+}

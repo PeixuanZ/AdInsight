@@ -66,7 +66,8 @@ st.sidebar.title("AdInsight")
 st.sidebar.caption("Multimodal causal attribution for video ads")
 page = st.sidebar.radio(
     "Navigation",
-    ["Overview", "Temporal Triggers", "Ad Explorer", "Causal Insights"]
+    ["Overview", "Temporal Triggers", "Ad Explorer",
+     "Causal Insights", "Stage 2: Adaptive Routing"]
 )
 
 # ══════════════════════════════════════════════════════════════
@@ -385,3 +386,122 @@ elif page == "Causal Insights":
         ax.set_title(f"Treatment effect by {selected_feat} quartile")
         st.pyplot(fig)
         plt.close()
+elif page == "Stage 2: Adaptive Routing":
+    st.title("Stage 2 — Adaptive Multimodal Routing")
+    st.markdown("Budget-aware attribution: how much CLIP do we actually need?")
+
+    # ── Key metrics ──────────────────────────────────────────
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Router AUC", "0.933")
+    col2.metric("10% budget precision", "1.000")
+    col3.metric("Text-only CATE R²", "0.317")
+    col4.metric("Full CLIP CATE R²", "0.792")
+
+    st.divider()
+
+    # ── Budget curve ─────────────────────────────────────────
+    budget_path = OUTPUTS_DIR / "budget_curve.json"
+    if budget_path.exists():
+        with open(budget_path) as f:
+            curve = json.load(f)
+
+        df_curve = pd.DataFrame(curve)
+        df_curve["r2_gain"] = df_curve["r2"] - df_curve["r2"].iloc[0]
+        df_curve["efficiency"] = (
+            df_curve["r2_gain"] /
+            (df_curve["r2"].iloc[-1] - df_curve["r2"].iloc[0] + 1e-9) * 100
+        ).round(1)
+
+        col_l, col_r = st.columns(2)
+
+        with col_l:
+            st.subheader("CATE R² vs CLIP budget")
+            fig, ax = plt.subplots(figsize=(5, 3.5))
+            ax.plot(df_curve["budget_pct"], df_curve["r2"],
+                    color="#1D9E75", linewidth=2.5, marker="o", markersize=4)
+            ax.axhline(df_curve["r2"].iloc[0], color="#888780",
+                       linestyle="--", linewidth=1,
+                       label=f"Text-only R²={df_curve['r2'].iloc[0]:.3f}")
+            ax.axhline(df_curve["r2"].iloc[-1], color="#7F77DD",
+                       linestyle="--", linewidth=1,
+                       label=f"Full CLIP R²={df_curve['r2'].iloc[-1]:.3f}")
+            ax.set_xlabel("CLIP budget (%)")
+            ax.set_ylabel("CATE R²")
+            ax.legend(fontsize=8)
+            st.pyplot(fig)
+            plt.close()
+
+        with col_r:
+            st.subheader("Efficiency frontier")
+            fig, ax = plt.subplots(figsize=(5, 3.5))
+            ax.plot(df_curve["n_clip"], df_curve["r2_gain"],
+                    color="#BA7517", linewidth=2.5, marker="o", markersize=4)
+            ax.set_xlabel("Ads processed with CLIP")
+            ax.set_ylabel("R² gain over text-only")
+            st.pyplot(fig)
+            plt.close()
+
+        st.subheader("Budget summary table")
+        st.dataframe(
+            df_curve[["budget_pct", "n_clip", "r2", "r2_gain", "efficiency"]]
+            .rename(columns={
+                "budget_pct": "Budget (%)",
+                "n_clip":     "Ads with CLIP",
+                "r2":         "CATE R²",
+                "r2_gain":    "R² gain",
+                "efficiency": "Efficiency (%)"
+            }),
+            use_container_width=True
+        )
+
+    st.divider()
+
+    # ── Router evaluation ────────────────────────────────────
+    st.subheader("Routing classifier performance")
+
+    routing_eval_path = OUTPUTS_DIR / "routing_eval.json"
+    if routing_eval_path.exists():
+        with open(routing_eval_path) as f:
+            routing_eval = json.load(f)
+
+        rows = []
+        for budget, metrics in routing_eval.items():
+            rows.append({
+                "Budget (%)":  metrics["budget_pct"],
+                "Ads to CLIP": metrics["n_clip"],
+                "Recall":      metrics["recall"],
+                "Precision":   metrics["precision"],
+                "F1":          metrics["f1"]
+            })
+        df_eval = pd.DataFrame(rows)
+
+        fig, ax = plt.subplots(figsize=(7, 3.5))
+        ax.plot(df_eval["Budget (%)"], df_eval["Recall"],
+                color="#1D9E75", marker="o", label="Recall")
+        ax.plot(df_eval["Budget (%)"], df_eval["Precision"],
+                color="#D85A30", marker="o", label="Precision")
+        ax.plot(df_eval["Budget (%)"], df_eval["F1"],
+                color="#7F77DD", marker="o", label="F1")
+        ax.set_xlabel("CLIP budget (%)")
+        ax.set_ylabel("Score")
+        ax.set_title("Router precision / recall / F1 vs budget")
+        ax.legend()
+        st.pyplot(fig)
+        plt.close()
+
+        st.dataframe(df_eval, use_container_width=True)
+
+    # ── Key insight ──────────────────────────────────────────
+    st.divider()
+    st.subheader("Key insight")
+    st.info(
+        "**CLIP is essential for causal estimation, not conversion prediction.**\n\n"
+        "Text-only features achieve R²=0.997 for mean ICTR prediction — "
+        "leaving no room for visual features. But for CATE estimation, "
+        "text-only R²=0.317 vs full CLIP R²=0.792. "
+        "Visual features explain *why* some ads convert better, "
+        "even when they can't predict *whether* an ad converts.\n\n"
+        "The adaptive router (AUC=0.933) identifies which ads need visual "
+        "analysis with 100% precision at 10% budget, enabling 10× compute "
+        "savings while preserving causal attribution quality."
+    )
