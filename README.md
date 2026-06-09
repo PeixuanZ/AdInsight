@@ -37,7 +37,7 @@ AdInsight analyzes 2,833 short-form video ads from the AdsTrace dataset. It comb
 - Heterogeneity is driven by structure: speech rate, number of frames, and duration are the top drivers of treatment effect heterogeneity, not content keywords.
 
 ## Project Structure
-
+```
 AdLens/
 ├── data/
 │   ├── raw/                        # Downloaded from HuggingFace (not in Git)
@@ -88,7 +88,7 @@ AdLens/
 │
 ├── requirements.txt
 └── README.md
-
+```
 ## Pipeline Overview
 
 AdsInsight (HuggingFace)
