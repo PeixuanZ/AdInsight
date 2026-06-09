@@ -24,3 +24,15 @@ Stage 2. Efficient Trigger Discovery via Adaptive Multimodal Routing
 
 - [] Adaptive Video Routing
 - [] Budget-Aware Attribution
+
+---
+AdInsight analyzes 2,833 short-form video ads from the AdsTrace dataset. It combines CLIP visual embeddings, transcript NLP, and Double Machine Learning to estimate the causal impact of ad content strategies on conversion rates (ICTR), and identifies temporal conversion triggers.
+
+## Key Findings
+
+- Conversion peaks cluster at the end: 47% of ads have their highest ICTR in the final 25% of duration, associated with a +349% lift in mean conversion rate
+- Early promotional content hurts: ads that open with promotional keywords in the first 5 seconds show a −19% lift in ICTR vs. control
+- CTA timing is neutral: whether CTA appears in the first or second half has minimal causal impact (±5%)
+- 73.6% of conversion triggers are unclassified: keyword-based trigger detection misses most conversion spikes, suggesting visual or tonal cues dominate
+- Heterogeneity is driven by structure: speech rate, number of frames, and duration are the top drivers of treatment effect heterogeneity — not content keywords
+
