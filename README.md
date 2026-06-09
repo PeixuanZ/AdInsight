@@ -6,21 +6,21 @@ Built AdLens, a multimodal causal-inspired attribution framework for e-commerce 
 
 Data source: https://huggingface.co/datasets/Xiuze/AdsTrace
 
-[] Week 1–2：AdsTrace data cleaning and feature extraction
+[x] Week 1–2：AdsTrace data cleaning and feature extraction
 
-[] Week 3：CLIP + Transcript content labeling
+[x] Week 3：CLIP + Transcript content labeling
 
-[] Week 4： Treatment and Confounders
+[x] Week 4： Treatment and Confounders
 
-[] Week 5：DML / EconML experiment
+[x] Week 5：DML / EconML experiment
 
-[] Week 6：Temporal Trigger Discovery
+[x] Week 6：Temporal Trigger Discovery
 
-[] Week 7：LLM Explanation Layer
+[x] Week 7：LLM Explanation Layer
 
-[] Week 8：Streamlit Demo + GitHub 
+[x] Week 8：Streamlit Demo + GitHub 
 
 Stage 2. Efficient Trigger Discovery via Adaptive Multimodal Routing
 
-- Adaptive Video Routing
-- Budget-Aware Attribution
+- [] Adaptive Video Routing
+- [] Budget-Aware Attribution
