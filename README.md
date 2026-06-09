@@ -22,8 +22,8 @@ Data source: https://huggingface.co/datasets/Xiuze/AdsTrace
 
 Stage 2. Efficient Trigger Discovery via Adaptive Multimodal Routing
 
-- [] Adaptive Video Routing
-- [] Budget-Aware Attribution
+- [x] Adaptive Video Routing
+- [x] Budget-Aware Attribution
 
 ---
 AdInsight analyzes 2,833 short-form video ads from the AdsTrace dataset. It combines CLIP visual embeddings, transcript NLP, and Double Machine Learning to estimate the causal impact of ad content strategies on conversion rates (ICTR), and identifies temporal conversion triggers.
@@ -169,3 +169,57 @@ Uses econml.dml.CausalForestDML to estimate heterogeneous treatment effects (CAT
 - CLIP ViT-B/32 trained on English data however for Chinese text classification it might not work well.
 - No randomization: causal estimates rely on unconfoundedness assumption.
 - ATE not statistically significant for any treatment but heterogeneous effects dominate.
+
+---
+## Stage 2: Adaptive Multimodal Routing
+
+### Motivation
+Running CLIP on all 2,833 ads takes ~8 minutes on Apple Silicon. Can we
+predict which ads need visual analysis using only cheap features?
+
+### Module 1: Adaptive Router
+Trained a routing classifier to predict which ads have high text-only
+attribution residuals (i.e. need visual features for accurate CATE estimation).
+
+**Key result**: GBM router achieves **AUC = 0.933** using only transcript
+and ICTR features. At 10% budget, precision = 1.000, indicating every ad routed to
+CLIP genuinely needs visual information.
+
+| Budget | Recall | Precision | F1 |
+|--------|--------|-----------|-----|
+| 10% | 0.260 | 1.000 | 0.413 |
+| 20% | 0.403 | 1.000 | 0.574 |
+| 30% | 0.596 | 0.988 | 0.744 |
+| 50% | 0.916 | 0.916 | 0.916 |
+
+Top routing features: `mean_ictr`, `ictr_std`, `transcript_duration`,
+`n_promo_kw`, `speech_rate`
+
+### Module 2: Budget-Aware Attribution
+Measured CATE prediction quality (R²) as a function of CLIP budget.
+
+**Key result**: CLIP visual features are **essential for causal effect
+estimation** but redundant for conversion rate prediction.
+
+| Budget | CATE R² | Efficiency |
+|--------|---------|------------|
+| 0% (text-only) | 0.317 | 0% |
+| 10% | 0.368 | 10.8% |
+| 30% | 0.438 | 25.5% |
+| 50% | 0.552 | 49.8% |
+| 100% (full CLIP) | 0.792 | 100% |
+
+**Negative result **: For `mean_ictr` prediction, text-only
+R²=0.997 — ICTR statistics already explain 99.7% of variance, leaving
+no room for visual features. CLIP only adds value when estimating
+*causal effects* (CATE), not raw conversion rates.
+
+### Files
+| File | Description |
+|------|-------------|
+| `src/routing/adaptive_router.py` | Router training + evaluation |
+| `src/routing/budget_attribution.py` | Budget sweep + curve generation |
+| `outputs/routing_decisions.parquet` | Per-ad routing decisions |
+| `outputs/router_meta.json` | Router AUC + feature list |
+| `outputs/budget_curve.json` | R² at each budget level |
+| `outputs/budget_attribution.png` | Budget-accuracy tradeoff plots |
