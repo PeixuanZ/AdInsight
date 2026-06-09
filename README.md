@@ -194,6 +194,13 @@ CLIP genuinely needs visual information.
 
 Top routing features: `mean_ictr`, `ictr_std`, `transcript_duration`,
 `n_promo_kw`, `speech_rate`
+| Feature | Importance | Intuition |
+|---------|------------|-----------|
+| `mean_ictr` | 0.343 | Ads with higher conversion rates have more complex visual patterns that text alone cannot explain |
+| `ictr_std` | 0.188 | High conversion rate volatility suggests specific visual moments trigger purchases, requiring visual analysis to locate them |
+| `transcript_duration` | 0.140 | Longer speech means text features are already rich — visual features provide the marginal signal |
+| `n_promo_kw` | 0.087 | Many promotional keywords yet unpredictable conversion implies visuals are driving the effect, not the words |
+| `speech_rate` | 0.044 | High information density means text features saturate quickly — visual context is needed to disambiguate |
 
 ### Module 2: Budget-Aware Attribution
 Measured CATE prediction quality (R²) as a function of CLIP budget.
