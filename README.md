@@ -150,3 +150,22 @@ Uses econml.dml.CausalForestDML to estimate heterogeneous treatment effects (CAT
   - Per-bin t-tests compare treated vs control groups.
   - Content 3 seconds before each peak classified by keyword type.
 
+## Causal Confounders
+
+| Confounder | Type | Rationale |
+| :--- | :--- | :--- |
+| `vis_product_close-up` | CLIP softmax | Visual style affects both content strategy and conversion |
+| `vis_person_using_product` | CLIP softmax | Lifestyle vs product-focused framing |
+| `vis_celebrity_endorsement` | CLIP softmax | Brand positioning signal |
+| `duration_sec` | Structural | Longer ads can include more content types |
+| `speech_rate` | Structural | Information density proxy |
+| `n_segments` | Structural | Content complexity |
+| `n_frames` | Structural | Visual editing pace |
+
+## Limitations
+
+- ICTR is a proxy for conversion, not ground-truth purchase data.
+- Keyword-based treatment variables miss visual and tonal cues (73.6% of triggers unclassified).
+- CLIP ViT-B/32 trained on English data however for Chinese text classification it might not work well.
+- No randomization: causal estimates rely on unconfoundedness assumption.
+- ATE not statistically significant for any treatment but heterogeneous effects dominate.
