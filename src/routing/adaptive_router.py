@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.model_selection import cross_val_score, StratifiedKFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, roc_auc_score
 from sklearn.calibration import CalibratedClassifierCV
@@ -104,6 +104,9 @@ def get_cheap_features(df: pd.DataFrame) -> pd.DataFrame:
 def train_router(X: pd.DataFrame, y: pd.Series) -> dict:
     """
     Train and compare multiple routing classifiers.
+    IMPORTANT: pass only TRAINING data here. CV inside this function is for
+    model selection, not for final evaluation — never call this on the
+    full dataset if you need an honest test-set metric afterward.
     Returns the best model + cross-validation results.
     """
     scaler = StandardScaler()
@@ -152,6 +155,23 @@ def train_router(X: pd.DataFrame, y: pd.Series) -> dict:
         "features":   list(X.columns)
     }
 
+def evaluate_on_holdout(router: dict, X_test: pd.DataFrame, y_test: pd.Series) -> dict:
+    """
+    Score the already-fitted router on a held-out test set it has
+    never seen — neither for model selection, calibration, nor fitting.
+    This is the number that goes in the README, not the CV mean.
+    """
+    X_test_scaled = router["scaler"].transform(X_test)
+    proba = router["model"].predict_proba(X_test_scaled)[:, 1]
+    test_auc = roc_auc_score(y_test, proba)
+
+    print(f"\nHeld-out test AUC: {test_auc:.4f}  (n={len(y_test)})")
+    print("(compare this to the CV mean above — a big gap means overfitting)")
+
+    return {"test_auc": round(float(test_auc), 4), "n_test": len(y_test)}
+
+
+# ── Step 4: Budget-aware routing ──────────────────────────────
 
 # ── Step 4: Budget-aware routing ──────────────────────────────
 def apply_budget_routing(
@@ -262,21 +282,44 @@ def main():
     X = get_cheap_features(df)
     print(f"Using {len(X.columns)} cheap features")
 
-    # Step 3: train router: predict which ads, text-only larger variance
-    print("\n=== Step 3: Train routing classifier ===")
+    # Step 2b: train/test split — held out BEFORE any fitting/CV,
+    # never touched until final evaluation. Stratify on y since
+    # needs_clip is a binary label with a defined split threshold.
+    print("\n=== Step 2b: Train/test split (80/20, stratified) ===")
+    train_idx, test_idx = train_test_split(
+        df.index, test_size=0.2, random_state=42, stratify=y
+    )
+    X_train, X_test = X.loc[train_idx], X.loc[test_idx]
+    y_train, y_test = y.loc[train_idx], y.loc[test_idx]
+    print(f"Train: {len(train_idx)} ads   Test: {len(test_idx)} ads")
+
+    # Step 3: train router on TRAIN split only (CV inside is for
+    # model selection among logistic/gbm/rf, not final evaluation)
+    print("\n=== Step 3: Train routing classifier (train split only) ===")
+    router = train_router(X_train, y_train)
+
+    # Step 3b: the one and only look at the test set
+    print("\n=== Step 3b: Held-out test evaluation ===")
+    holdout_results = evaluate_on_holdout(router, X_test, y_test)
+
+    # Step 4: apply budget routing on the TEST split (honest numbers)
+    print("\n=== Step 4: Budget-aware routing (test split) ===")
+    df_test = apply_budget_routing(df.loc[test_idx], router, clip_budget=0.30)
+
+    # Step 5: evaluate routing quality on the TEST split
+    print("\n=== Step 5: Evaluate routing quality (test split) ===")
+    eval_results = evaluate_routing(df_test, y_test)
+
+    # Step 6: validate routing improves attribution quality (test split)
+    print("\n=== Step 6: Attribution quality comparison (test split) ===")
+    compare_attribution_quality(df_test, residuals[df.index.get_indexer(test_idx)])
+
+    # Step 7: refit router on FULL data for production use
+    # (now that we have an honest estimate of how good it is,
+    # it's fine to use all the data for the deployed model)
+    print("\n=== Step 7: Refit on full data for production ===")
     router = train_router(X, y)
-
-    # Step 4: apply budget routing
-    print("\n=== Step 4: Budget-aware routing ===")
     df = apply_budget_routing(df, router, clip_budget=0.30)
-
-    # Step 5: evaluate
-    print("\n=== Step 5: Evaluate routing quality ===")
-    eval_results = evaluate_routing(df, y)
-
-    # Step 6: validate routing improves attribution quality
-    print("\n=== Step 6: Attribution quality comparison ===")
-    compare_attribution_quality(df, residuals)
 
     # Feature importance
     print("\n=== Top routing features ===")
@@ -300,10 +343,12 @@ def main():
         json.dump(eval_results, f, indent=2)
 
     router_meta = {
-        "best_model":  router["best_name"],
-        "cv_results":  router["cv_results"],
-        "features":    router["features"],
-        "n_features":  len(router["features"])
+        "best_model":   router["best_name"],
+        "cv_results":   router["cv_results"],
+        "holdout_auc":  holdout_results["test_auc"],
+        "n_test":       holdout_results["n_test"],
+        "features":     router["features"],
+        "n_features":   len(router["features"])
     }
     with open(OUTPUTS_DIR / "router_meta.json", "w") as f:
         json.dump(router_meta, f, indent=2)
@@ -314,9 +359,10 @@ def main():
 
     # Summary
     print("\n=== Summary ===")
-    print(f"Best router AUC: "
+    print(f"CV AUC (train split, model selection): "
           f"{router['cv_results'][router['best_name']]['auc_mean']:.4f}")
-    print(f"At 30% budget: "
+    print(f"Held-out test AUC: {holdout_results['test_auc']:.4f}")
+    print(f"At 30% budget (test split): "
           f"recall={eval_results[0.30]['recall']:.3f}, "
           f"F1={eval_results[0.30]['f1']:.3f}")
 

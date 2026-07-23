@@ -14,6 +14,8 @@
       "auc_std": 0.014265374667137105
     }
   },
+  "holdout_auc": 0.9318,
+  "n_test": 567,
   "features": [
     "mean_ictr",
     "max_ictr",

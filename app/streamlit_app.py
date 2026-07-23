@@ -27,11 +27,19 @@ def load_data():
     df_peaks["ad_id"]  = df_peaks["ad_id"].astype(str)
 
     # 确认 peaks 里有哪些列
+    # 确认 peaks 里有哪些列
     peak_cols = ["ad_id", "peak_sec", "peak_relative_pos",
                  "trigger_type", "trigger_text", "n_peaks",
                  "ictr_at_peak_ratio"]
     # 只取存在的列
     peak_cols = [c for c in peak_cols if c in df_peaks.columns]
+
+    # dataset_causal.parquet already has most of these (temporal_triggers.py
+    # merges them in and saves). Drop the overlap from df_master first so
+    # this merge doesn't create trigger_type_x / trigger_type_y duplicates —
+    # that silently broke the trigger_type chart before this fix.
+    overlap = [c for c in peak_cols if c != "ad_id" and c in df_master.columns]
+    df_master = df_master.drop(columns=overlap)
 
     df = df_master.merge(df_peaks[peak_cols], on="ad_id", how="left")
 
@@ -329,8 +337,10 @@ elif page == "Causal Insights":
 
         fig, ax = plt.subplots(figsize=(8, 4))
         y_pos = range(len(df_ate))
+        # Use FDR-corrected significance, not raw p — see Validation & Limitations.
+        # (0/9 treatments are currently significant after correction)
         colors = ["#1D9E75" if sig else "#888780"
-                  for sig in df_ate["significant"]]
+                  for sig in df_ate["significant_fdr"]]
         ax.barh(y_pos, df_ate["ate"], color=colors, alpha=0.8)
         ax.errorbar(
             df_ate["ate"], y_pos,
@@ -348,7 +358,11 @@ elif page == "Causal Insights":
         st.pyplot(fig)
         plt.close()
 
+        st.caption("Green = significant after Benjamini-Hochberg FDR correction "
+                   "across all 9 treatments. Gray = not significant. See "
+                   "Validation & Limitations for placebo-test results.")
         st.dataframe(df_ate, use_container_width=True)
+
 
     # Feature importance
     fi_path = OUTPUTS_DIR / "feature_importance.csv"
@@ -390,12 +404,20 @@ elif page == "Stage 2: Adaptive Routing":
     st.title("Stage 2 — Adaptive Multimodal Routing")
     st.markdown("Budget-aware attribution: how much CLIP do we actually need?")
 
+
     # ── Key metrics ──────────────────────────────────────────
+    router_meta_path = OUTPUTS_DIR / "router_meta.json"
+    router_meta = {}
+    if router_meta_path.exists():
+        with open(router_meta_path) as f:
+            router_meta = json.load(f)
+
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Router AUC", "0.933")
+    col1.metric("Router held-out test AUC",
+                f"{router_meta.get('holdout_auc', 0.932):.3f}")
     col2.metric("10% budget precision", "1.000")
-    col3.metric("Text-only CATE R²", "0.317")
-    col4.metric("Full CLIP CATE R²", "0.792")
+    col3.metric("Text-only CATE R²", "0.397")
+    col4.metric("Full CLIP CATE R²", "0.639")
 
     st.divider()
 
@@ -495,13 +517,17 @@ elif page == "Stage 2: Adaptive Routing":
     st.divider()
     st.subheader("Key insight")
     st.info(
-        "**CLIP is essential for causal estimation, not conversion prediction.**\n\n"
+        "**CLIP substantially improves CATE reconstruction, though not raw conversion prediction.**\n\n"
         "Text-only features achieve R²=0.997 for mean ICTR prediction — "
-        "leaving no room for visual features. But for CATE estimation, "
-        "text-only R²=0.317 vs full CLIP R²=0.792. "
-        "Visual features explain *why* some ads convert better, "
-        "even when they can't predict *whether* an ad converts.\n\n"
-        "The adaptive router (AUC=0.933) identifies which ads need visual "
-        "analysis with 100% precision at 10% budget, enabling 10× compute "
-        "savings while preserving causal attribution quality."
+        "leaving no room for visual features. But for reconstructing the "
+        "CausalForest CATE estimate, text-only R²=0.397 vs full CLIP R²=0.639. "
+        "Visual features add real predictive signal for the effect-heterogeneity "
+        "estimate, even when they can't predict raw conversion rates.\n\n"
+        "The adaptive router (held-out test AUC=0.932) identifies which ads need "
+        "visual analysis with 100% precision at 10% budget, enabling significant "
+        "compute savings while preserving CATE reconstruction quality.\n\n"
+        "⚠️ Note: the underlying CATE (for T_promo_first_5s) did not survive "
+        "FDR correction or placebo testing — see Validation & Limitations. "
+        "This module demonstrates an efficient *routing/reconstruction* system, "
+        "not a confirmed causal finding."
     )

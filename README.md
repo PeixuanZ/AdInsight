@@ -29,6 +29,7 @@ Stage 2. Efficient Trigger Discovery via Adaptive Multimodal Routing
 AdInsight analyzes 2,833 short-form video ads from the AdsTrace dataset. It combines CLIP visual embeddings, transcript NLP, and Double Machine Learning to estimate the causal impact of ad content strategies on conversion rates (ICTR), and identifies temporal conversion triggers.
 
 ## Key Findings
+> ⚠️ See [Validation & Limitations](#validation--limitations) below — none of these effects survived FDR correction or placebo testing. Read as exploratory/descriptive, not confirmed causal findings.
 
 - Conversion peaks cluster at the end: 47% of ads have their highest ICTR in the final 25% of duration, associated with a +349% lift in mean conversion rate
 - Early promotional content hurts: ads that open with promotional keywords in the first 5 seconds show a 19% lift in ICTR vs. control
@@ -182,16 +183,14 @@ predict which ads need visual analysis using only cheap features?
 Trained a routing classifier to predict which ads have high text-only
 attribution residuals (i.e. need visual features for accurate CATE estimation).
 
-**Key result**: GBM router achieves **AUC = 0.933** using only transcript
-and ICTR features. At 10% budget, precision = 1.000, indicating every ad routed to
-CLIP genuinely needs visual information.
+**Key result**: GBM router achieves **held-out test AUC = 0.932** (CV AUC = 0.931 — consistent, no overfitting) using only transcript and ICTR features.
 
 | Budget | Recall | Precision | F1 |
 |--------|--------|-----------|-----|
-| 10% | 0.260 | 1.000 | 0.413 |
-| 20% | 0.403 | 1.000 | 0.574 |
-| 30% | 0.596 | 0.988 | 0.744 |
-| 50% | 0.916 | 0.916 | 0.916 |
+| 10% | 0.198 | 1.000 | 0.330 |
+| 20% | 0.399 | 1.000 | 0.571 |
+| 30% | 0.580 | 0.965 | 0.724 |
+| 50% | 0.866 | 0.866 | 0.866 |
 
 Top routing features: `mean_ictr`, `ictr_std`, `transcript_duration`,
 `n_promo_kw`, `speech_rate`
@@ -204,23 +203,23 @@ Top routing features: `mean_ictr`, `ictr_std`, `transcript_duration`,
 | `speech_rate` | 0.044 | High information density means text features saturate quickly — visual context is needed to disambiguate |
 
 ### Module 2: Budget-Aware Attribution
-Measured CATE prediction quality (R²) as a function of CLIP budget.
+Measured CATE prediction quality (R²) as a function of CLIP budget. CATE here is the CausalForest estimate for `T_promo_first_5s` from Module 1.5 — see [Validation & Limitations](#validation--limitations) for why this specific treatment's causal validity is exploratory, not confirmed.
 
-**Key result**: CLIP visual features are **essential for causal effect
-estimation** but redundant for conversion rate prediction.
+**Key result**: CLIP visual features substantially improve the model's ability to reconstruct the CATE estimate, at a fraction of the compute cost.
 
-| Budget | CATE R² | Efficiency |
+| Budget | CATE R² | Efficiency (of full-CLIP gain) |
 |--------|---------|------------|
-| 0% (text-only) | 0.317 | 0% |
-| 10% | 0.368 | 10.8% |
-| 30% | 0.438 | 25.5% |
-| 50% | 0.552 | 49.8% |
-| 100% (full CLIP) | 0.792 | 100% |
+| 0% (text-only) | 0.397 | 0% |
+| 10% | 0.433 | 15.0% |
+| 20% | 0.466 | 28.4% |
+| 30% | 0.495 | 40.5% |
+| 50% | 0.538 | 58.5% |
+| 100% (full CLIP) | 0.639 | 100% |
 
-**Negative result **: For `mean_ictr` prediction, text-only
+**Negative result**: For `mean_ictr` prediction directly (not CATE), text-only
 R²=0.997 — ICTR statistics already explain 99.7% of variance, leaving
-no room for visual features. CLIP only adds value when estimating
-*causal effects* (CATE), not raw conversion rates.
+no room for visual features. CLIP only adds value when reconstructing
+the *CATE estimate*, not raw conversion rates.
 
 ### Files
 | File | Description |
@@ -231,3 +230,69 @@ no room for visual features. CLIP only adds value when estimating
 | `outputs/router_meta.json` | Router AUC + feature list |
 | `outputs/budget_curve.json` | R² at each budget level |
 | `outputs/budget_attribution.png` | Budget-accuracy tradeoff plots |
+
+
+## Validation & Limitations
+(Updated on 07/23/2026)
+
+This section documents the validation methodology used across AdInsight's modules, and is transparent about what the results do and don't support. It was added after an internal audit surfaced several methodological issues (see below) — the numbers here reflect the fixes.
+
+### Module 1 — Adaptive Router: held-out test evaluation
+
+The router (GBM classifier deciding which ads get the expensive CLIP path) is evaluated on an 80/20 stratified train/test split, held out before any model fitting or calibration.
+
+| Metric | Train-split CV | Held-out test |
+|---|---|---|
+| AUC | 0.9308 ± 0.0179 | **0.9318** (n=567) |
+
+The held-out AUC matches the cross-validated training AUC almost exactly, indicating the router generalizes rather than overfitting. Budget-level precision/recall (below) are computed on this same untouched test split.
+
+| Budget | Recall | Precision | F1 |
+|---|---|---|---|
+| 10% | 0.198 | 1.000 | 0.330 |
+| 20% | 0.399 | 1.000 | 0.571 |
+| 30% | 0.580 | 0.965 | 0.724 |
+| 40% | 0.731 | 0.916 | 0.813 |
+| 50% | 0.866 | 0.866 | 0.866 |
+
+*Note: an earlier version of this evaluation scored the router on the same data it was fit and calibrated on (resubstitution), which inflated these numbers slightly. The held-out numbers above are the honest ones — the gap turned out to be small, confirming the router's underlying strength was real, not an artifact.*
+
+Production routing decisions (`routing_decisions.parquet`) are generated by a router refit on 100% of the data, once the honest test-set performance above had already been established — standard practice once you trust the number, but the reported metrics themselves never touch that refit model.
+
+### Module 1.5 — Causal validation (DML treatment effects)
+
+Nine content-timing treatments (promo/CTA timing) were tested via `LinearDML` against `Y_mean_ictr`, with three layers of validation:
+
+1. **Raw significance**: 0/9 treatments significant at p<0.05
+2. **Multiple-testing correction** (Benjamini-Hochberg FDR, across all 9 tests): 0/9 significant after correction
+3. **Placebo refutation test**: for the top 3 treatments by |ATE|, shuffling the treatment column and rerunning DML produced ATEs of similar magnitude to the real ones — i.e., the real estimates are statistically indistinguishable from noise
+
+**Conclusion: none of the tested content-timing treatments show a causally detectable effect on mean ICTR in this dataset.** This is a genuine finding, not a failure of the pipeline — three independent checks (raw p, FDR, placebo) agree, and a parallel time-resolved analysis (below) reaches the same conclusion.
+
+The same FDR correction was applied to `temporal_triggers.py`'s time-window t-tests (5 treatments × 20 time bins, 100 tests pooled). After correction, `T_promo_first_3s/5s` and `T_cta_early/late` mostly collapse to 0-2 significant windows, consistent with the DML null result. `T_peak_in_last_quarter` remains significant across nearly the whole curve (17/20 windows) — see the note below on why this is expected and not evidence of a real effect.
+
+**`T_peak_in_last_quarter` was excluded from causal treatment analysis.** It's derived from `peak_relative_pos`, which comes from the same per-second ICTR curve that the outcome (`Y_mean_ictr`) is computed from — making it a descendant of the outcome rather than an upstream cause. Using it as a DML "treatment" would be a bad-control / reverse-causality error. It's retained only for descriptive analysis (e.g. "47% of ads peak in the last quarter of runtime").
+
+### Module 2 — Budget-Aware Attribution
+
+The routing/CLIP-budget tradeoff (30% CLIP budget captures ~40% of the accuracy gain of full CLIP usage) is measured against `cate` — the CausalForest CATE estimate for `T_promo_first_5s`, produced in Module 1.5.
+
+**Important caveat**: per the causal validation above, `T_promo_first_5s`'s treatment effect did not survive FDR correction or the placebo test. This means Module 2's result should be read as an **engineering/systems finding** — the routing mechanism efficiently approximates a target signal with a fraction of the compute — rather than a causal claim about what drives ad performance. The routing mechanics and the OOF cross-validation methodology behind these R² numbers are sound; the label they're predicting is exploratory.
+
+### Study design: observational, not randomized
+
+AdInsight estimates treatment effects from historical ad performance data — ad creators weren't randomly assigned which content strategies to use. This means:
+
+- DML's validity rests on the **unconfoundedness assumption**: that the confounders included (visual style, duration, speech rate, etc.) capture the factors that jointly affect both treatment choice and outcome. This can't be tested directly, only made more plausible with richer confounders and checked indirectly via the propensity diagnostics (`prop_min`/`prop_mean`/`prop_max`) already logged per treatment.
+- The appropriate standard for "does this generalize" here isn't a train/test split (DML's `cv=3` cross-fitting already serves that role for the nuisance models) — it's refutation testing: placebo shuffles, overlap/positivity checks, and (ideally) subsample stability checks.
+- **Power analysis**: at n=2,833 (α=0.05, 80% power), this dataset can detect effects of roughly Δ≥0.0021 for balanced treatments (~10% relative lift) and Δ≥0.0035 for imbalanced treatments like `T_promo_last_5s` (9% prevalence, ~16% relative lift). All observed ATEs (0.0005–0.0011) fall below these thresholds — meaning the correct conclusion is **"this dataset cannot distinguish these treatments' effects from zero, given their likely small size"**, not **"these treatments have no effect."** A live randomized A/B test would need either a much larger sample or to target treatments with hypothesized larger effect sizes to be conclusive either way.
+
+### Summary of fixes applied (for reference)
+
+| Issue found | Fix |
+|---|---|
+| Router evaluated on data it was fit/calibrated on | Added 80/20 held-out split; router reports test-set metrics, refits on full data only for production after |
+| No multiple-testing correction across 9 DML treatments | Added Benjamini-Hochberg FDR correction |
+| No multiple-testing correction across 100 time-bin t-tests | Added pooled FDR correction across all treatments × bins |
+| No refutation check on DML estimates | Added placebo test (shuffled treatment) for top treatments |
+| `T_peak_in_last_quarter` used as a causal treatment despite being derived from the outcome | Moved to descriptive-only use |

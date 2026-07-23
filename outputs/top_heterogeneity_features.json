@@ -1,7 +1,7 @@
 [
-  "vis_lifestyle_scene",
-  "vis_product_close-up",
-  "vis_unboxing_scene",
+  "speech_rate",
   "n_frames",
-  "vis_before_and_after_comparison"
+  "vis_discount_price_display",
+  "duration_sec",
+  "vis_lifestyle_scene"
 ]

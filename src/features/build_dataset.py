@@ -227,10 +227,10 @@ if __name__ == "__main__":
             "T_has_promo", "T_has_cta", "T_has_price",
             "T_early_promo",
             "T_promo_first_3s", "T_promo_first_5s", "T_promo_last_5s",
-            "T_cta_early", "T_cta_late",
-            "T_peak_in_last_quarter"
+            "T_cta_early", "T_cta_late"
         ],
         "treatments_skip": ["T_has_urgency"],  # 样本太少
+        "treatments_descriptive_only": ["T_peak_in_last_quarter"],
         "continuous_treatments": ["T_promo_cta_gap"],
         "outcomes":   ["Y_mean_ictr", "Y_max_ictr",
                        "Y_late_early_ratio", "Y_ictr_slope"],

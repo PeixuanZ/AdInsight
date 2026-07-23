@@ -13,6 +13,8 @@ from sklearn.ensemble import GradientBoostingRegressor, RandomForestClassifier
 from sklearn.linear_model import LassoCV, LogisticRegressionCV
 from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import StandardScaler
+from statsmodels.stats.multitest import multipletests
+from scipy.stats import norm
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -44,7 +46,8 @@ def run_linear_dml(df, treatment, outcome, confounders):
     est = LinearDML(
         model_y=GradientBoostingRegressor(
             n_estimators=100,
-            max_depth=3
+            max_depth=3,
+            random_state=42
         ),
         model_t=LogisticRegressionCV(
             cv=3,
@@ -62,11 +65,15 @@ def run_linear_dml(df, treatment, outcome, confounders):
         X_scaled,
         alpha=0.05
     )
+    se = (float(ate_inf[1]) - float(ate_inf[0])) / (2 * 1.96)
+    z = ate / se if se > 0 else 0.0
+    p_value = 2 * (1 - norm.cdf(abs(z)))
 
     # propensity diagnostics
     prop_model = LogisticRegressionCV(
         cv=3,
-        max_iter=1000
+        max_iter=1000,
+        random_state=42
     )
 
     prop_model.fit(X_scaled, T)
@@ -82,7 +89,8 @@ def run_linear_dml(df, treatment, outcome, confounders):
         "ate": float(ate),
         "ci_lower": float(ate_inf[0]),
         "ci_upper": float(ate_inf[1]),
-        "significant":
+        "p_value": float(p_value),
+        "significant_raw":
             float(ate_inf[0]) > 0
             or float(ate_inf[1]) < 0,
 
@@ -101,7 +109,32 @@ def run_linear_dml(df, treatment, outcome, confounders):
         )
     }
 
+def run_placebo_test(df, treatment, outcome, confounders, n_shuffles=5, seed=42):
+    """
+    Refutation check: shuffle the treatment column randomly and rerun
+    LinearDML. A real causal effect should vanish once treatment is
+    decoupled from outcome — if the "ATE" stays large and significant
+    on shuffled data, something in the pipeline is leaking rather than
+    estimating a genuine effect.
+    """
+    rng = np.random.RandomState(seed)
+    placebo_ates = []
 
+    for i in range(n_shuffles):
+        df_shuffled = df.copy()
+        df_shuffled[treatment] = rng.permutation(df_shuffled[treatment].values)
+        res = run_linear_dml(df_shuffled, treatment, outcome, confounders)
+        placebo_ates.append(res["ate"])
+        print(f"    placebo shuffle {i+1}/{n_shuffles}: "
+              f"ATE={res['ate']:.6f} p={res['p_value']:.4f}")
+
+    placebo_ates = np.array(placebo_ates)
+    return {
+        "treatment": treatment,
+        "placebo_ate_mean": float(placebo_ates.mean()),
+        "placebo_ate_std": float(placebo_ates.std()),
+        "n_shuffles": n_shuffles
+    }
 
 def run_causal_forest(df, treatment, outcome, confounders):
     """
@@ -116,7 +149,7 @@ def run_causal_forest(df, treatment, outcome, confounders):
     X_scaled = scaler.fit_transform(X)
 
     est = CausalForestDML(
-        model_y=GradientBoostingRegressor(n_estimators=100, max_depth=3),
+        model_y=GradientBoostingRegressor(n_estimators=100, max_depth=3, random_state=42),
         model_t=LogisticRegressionCV(cv=3, max_iter=1000),
         discrete_treatment=True,
         n_estimators=200,
@@ -164,22 +197,78 @@ def main():
         print(f"\n  Estimating {t}...")
         res = run_linear_dml(df, t, outcome, confounders)
         results.append(res)
-        sig = "✓ SIGNIFICANT" if res["significant"] else "✗ not significant"
+        sig = "✓ SIGNIFICANT (raw p)" if res["significant_raw"] else "✗ not significant"
         print(f"    ATE: {res['ate']:.6f} "
-              f"[{res['ci_lower']:.6f}, {res['ci_upper']:.6f}] {sig}")
+              f"[{res['ci_lower']:.6f}, {res['ci_upper']:.6f}] "
+              f"p={res['p_value']:.4f} {sig}")
 
     df_results = pd.DataFrame(results)
+
+    # ── FDR correction across all treatments tested ──────────
+    # We ran multiple independent significance tests (one per
+    # treatment). At alpha=0.05, ~5% false positives are expected
+    # by chance in each test even if nothing were real — with
+    # ~9 treatments that adds up. Benjamini-Hochberg controls the
+    # false discovery rate across the whole batch.
+    reject, q_values, _, _ = multipletests(
+        df_results["p_value"].values, alpha=0.05, method="fdr_bh"
+    )
+    df_results["q_value"] = q_values
+    df_results["significant_fdr"] = reject
+
+    n_raw = df_results["significant_raw"].sum()
+    n_fdr = df_results["significant_fdr"].sum()
+    print(f"\n=== Multiple-testing correction (Benjamini-Hochberg FDR) ===")
+    print(f"Significant at raw p<0.05:      {n_raw}/{len(df_results)}")
+    print(f"Significant after FDR (q<0.05): {n_fdr}/{len(df_results)}")
+    if n_raw != n_fdr:
+        dropped = df_results[
+            df_results["significant_raw"] & ~df_results["significant_fdr"]
+        ]["treatment"].tolist()
+        print(f"Dropped after correction: {dropped}")
+
     print("\n=== ATE Results ===")
     print(df_results.to_string(index=False))
+
+    # ── Placebo refutation test ──────────────────────────────
+    # Run on the top 3 treatments by |ATE| — if the pipeline is sound,
+    # shuffled-treatment ATEs should be much smaller than the real ones.
+    print("\n=== Placebo refutation test (top 3 by |ATE|) ===")
+    top3 = df_results.reindex(
+        df_results["ate"].abs().sort_values(ascending=False).index
+    ).head(3)
+
+    placebo_results = []
+    for _, row in top3.iterrows():
+        t = row["treatment"]
+        print(f"\n  Placebo test for {t} (real ATE={row['ate']:.6f})...")
+        placebo = run_placebo_test(df, t, outcome, confounders)
+        placebo["real_ate"] = row["ate"]
+        placebo_results.append(placebo)
+
+    pd.DataFrame(placebo_results).to_csv(
+        OUTPUTS_DIR / "placebo_results.csv", index=False
+    )
+    print("\n✓ Saved outputs/placebo_results.csv")
 
     df_results.to_csv(OUTPUTS_DIR / "ate_results.csv", index=False)
     print(f"\n Saved to outputs/ate_results.csv")
 
+
     # ── Step 2: CausalForest → CATE for best treatment ──
-    # 选 ATE 最大且显著的 treatment 做 CATE
+    # Prefer a treatment that's still significant AFTER FDR correction —
+    # picking by raw |ATE| alone risks building the whole heterogeneity
+    # analysis (Step 3+) on an effect that was actually noise.
+    fdr_sig = df_results[df_results["significant_fdr"]]
+    candidates = fdr_sig if len(fdr_sig) > 0 else df_results
+    if len(fdr_sig) == 0:
+        print("\n⚠ No treatment survived FDR correction — falling back to "
+              "largest |ATE| overall. Treat the CATE analysis below as "
+              "exploratory, not confirmatory.")
+
     best_treatment = (
-        df_results.iloc[
-            df_results["ate"]
+        candidates.iloc[
+            candidates["ate"]
             .abs()
             .argmax()
         ]["treatment"]
@@ -187,7 +276,7 @@ def main():
 
     print(
         f"\nUsing treatment with largest "
-        f"absolute ATE: {best_treatment}"
+        f"absolute ATE (FDR-significant preferred): {best_treatment}"
     )
 
     print(f"\n=== CausalForest CATE for {best_treatment} ===")

@@ -9,6 +9,7 @@ from pathlib import Path
 from tqdm import tqdm
 from scipy import stats
 from scipy.signal import find_peaks
+from statsmodels.stats.multitest import multipletests
 
 ROOT_DIR        = Path(__file__).parent.parent.parent
 RAW_DIR         = ROOT_DIR / "data" / "raw"
@@ -158,6 +159,9 @@ def compare_ictr_curves(df_aligned: pd.DataFrame,
         "mean_control":  mean_control.tolist(),
         "p_values":      p_values,
         "sig_windows":   [i for i, p in enumerate(p_values) if p < 0.05]
+        # sig_windows_fdr added later in main() — FDR correction needs
+        # to see p-values pooled across ALL treatments x time bins at
+        # once, not one treatment's 20 bins in isolation
     }
 
 
@@ -220,8 +224,38 @@ def main():
         n_sig = len(res["sig_windows"])
         print(f"  {t}: {res['n_treated']} treated, "
               f"{res['n_control']} control, "
-              f"{n_sig} significant time windows")
+              f"{n_sig} significant time windows (raw p<0.05)")
         curve_results.append(res)
+
+    # ── FDR correction, pooled across ALL treatments x time bins ──
+    # We're really running one big batch here: 5 treatments x 20 time
+    # bins = up to 100 t-tests. At raw p<0.05 that's ~5 false positives
+    # expected by chance alone even if nothing were real. Pool every
+    # p-value across every treatment and correct once, then map back.
+    all_p = []
+    index_map = []  # (result_idx, bin_idx) for each p-value, in order
+    for ri, res in enumerate(curve_results):
+        for bi, p in enumerate(res["p_values"]):
+            all_p.append(p)
+            index_map.append((ri, bi))
+
+    if all_p:
+        reject, q_values, _, _ = multipletests(all_p, alpha=0.05, method="fdr_bh")
+        for res in curve_results:
+            res["q_values"] = [None] * len(res["p_values"])
+            res["sig_windows_fdr"] = []
+        for (ri, bi), q, rej in zip(index_map, q_values, reject):
+            curve_results[ri]["q_values"][bi] = float(q)
+            if rej:
+                curve_results[ri]["sig_windows_fdr"].append(bi)
+
+        print(f"\n=== Multiple-testing correction (pooled, "
+              f"{len(all_p)} tests, Benjamini-Hochberg FDR) ===")
+        for res in curve_results:
+            n_raw = len(res["sig_windows"])
+            n_fdr = len(res["sig_windows_fdr"])
+            print(f"  {res['treatment']}: raw={n_raw} windows -> "
+                  f"FDR-corrected={n_fdr} windows")
 
     with open(OUTPUTS_DIR / "curve_comparisons.json", "w") as f:
         json.dump(curve_results, f, indent=2)
