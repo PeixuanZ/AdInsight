@@ -273,6 +273,10 @@ The same FDR correction was applied to `temporal_triggers.py`'s time-window t-te
 
 **`T_peak_in_last_quarter` was excluded from causal treatment analysis.** It's derived from `peak_relative_pos`, which comes from the same per-second ICTR curve that the outcome (`Y_mean_ictr`) is computed from — making it a descendant of the outcome rather than an upstream cause. Using it as a DML "treatment" would be a bad-control / reverse-causality error. It's retained only for descriptive analysis (e.g. "47% of ads peak in the last quarter of runtime").
 
+### Naive baseline comparison
+
+Alongside the DML estimates, a naive OLS baseline (`Y ~ T + X`, with no cross-fitting or orthogonalization) was run for all 9 treatments to quantify what confounder adjustment actually changes. Both methods agree on the headline result — 0/9 significant either way — but several point estimates shift meaningfully, and `T_promo_last_5s` flips sign entirely (naive: +0.00084, DML: -0.00063). This confirms the confounders (visual style, duration, speech rate) are doing real adjustment work, even though the resulting estimates remain too small to distinguish from zero given this sample size (see Power Analysis above).
+
 ### Module 2 — Budget-Aware Attribution
 
 The routing/CLIP-budget tradeoff (30% CLIP budget captures ~40% of the accuracy gain of full CLIP usage) is measured against `cate` — the CausalForest CATE estimate for `T_promo_first_5s`, produced in Module 1.5.
@@ -287,7 +291,7 @@ AdInsight estimates treatment effects from historical ad performance data — ad
 - The appropriate standard for "does this generalize" here isn't a train/test split (DML's `cv=3` cross-fitting already serves that role for the nuisance models) — it's refutation testing: placebo shuffles, overlap/positivity checks, and (ideally) subsample stability checks.
 - **Power analysis**: at n=2,833 (α=0.05, 80% power), this dataset can detect effects of roughly Δ≥0.0021 for balanced treatments (~10% relative lift) and Δ≥0.0035 for imbalanced treatments like `T_promo_last_5s` (9% prevalence, ~16% relative lift). All observed ATEs (0.0005–0.0011) fall below these thresholds — meaning the correct conclusion is **"this dataset cannot distinguish these treatments' effects from zero, given their likely small size"**, not **"these treatments have no effect."** A live randomized A/B test would need either a much larger sample or to target treatments with hypothesized larger effect sizes to be conclusive either way.
 
-### Summary of fixes applied (for reference)
+### Summary of fixes applied 
 
 | Issue found | Fix |
 |---|---|
@@ -296,3 +300,8 @@ AdInsight estimates treatment effects from historical ad performance data — ad
 | No multiple-testing correction across 100 time-bin t-tests | Added pooled FDR correction across all treatments × bins |
 | No refutation check on DML estimates | Added placebo test (shuffled treatment) for top treatments |
 | `T_peak_in_last_quarter` used as a causal treatment despite being derived from the outcome | Moved to descriptive-only use |
+| No baseline to show what confounder-adjustment (DML) actually buys over a naive estimate | Added naive OLS baseline (`Y ~ T + X`, no cross-fitting/orthogonalization) run alongside DML for all 9 treatments |
+| `GradientBoostingRegressor` inside DML nuisance models wasn't seeded, causing run-to-run ATE drift | Added `random_state=42` to all GBM instances in `dml_estimate.py` |
+| `trigger_type`/peak columns duplicated on repeated merges in Streamlit app | Drop overlapping columns from `df_master` before merging with `df_peaks` |
+| `df_ate["significant"]` column renamed, breaking Streamlit's Causal Insights chart | Updated to `significant_fdr`, added caption explaining the correction |
+| Stage 2 dashboard metrics hardcoded and went stale after fixes | Now reads live from `router_meta.json`'s `holdout_auc` field |

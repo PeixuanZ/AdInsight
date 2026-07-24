@@ -14,6 +14,7 @@ from sklearn.linear_model import LassoCV, LogisticRegressionCV
 from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import StandardScaler
 from statsmodels.stats.multitest import multipletests
+import statsmodels.api as sm
 from scipy.stats import norm
 import warnings
 warnings.filterwarnings("ignore")
@@ -108,6 +109,35 @@ def run_linear_dml(df, treatment, outcome, confounders):
             propensity.max()
         )
     }
+
+def run_naive_ols(df, treatment, outcome, confounders):
+    """
+    Naive baseline: plain OLS regression of Y on T + confounders,
+    with NO cross-fitting and NO orthogonalization. This is exactly
+    the kind of "naive" estimate DML is designed to improve on —
+    comparing the two shows how much the confounder-adjustment
+    machinery actually changes the answer.
+    """
+    X = df[[treatment] + confounders].values
+    y = df[outcome].values
+    X_with_const = sm.add_constant(X)
+
+    model = sm.OLS(y, X_with_const).fit()
+
+    # column 0 is the constant, column 1 is the treatment
+    naive_ate = model.params[1]
+    ci = model.conf_int()[1]
+    naive_p = model.pvalues[1]
+
+    return {
+        "treatment": treatment,
+        "naive_ate": float(naive_ate),
+        "naive_ci_lower": float(ci[0]),
+        "naive_ci_upper": float(ci[1]),
+        "naive_p": float(naive_p)
+    }
+
+
 
 def run_placebo_test(df, treatment, outcome, confounders, n_shuffles=5, seed=42):
     """
@@ -204,6 +234,24 @@ def main():
 
     df_results = pd.DataFrame(results)
 
+    # ── Naive OLS baseline (no confounder adjustment) ─────────
+    # Run alongside DML for every treatment so we can show, side by
+    # side, how much the DML adjustment actually changes the estimate.
+    print("\n=== Naive OLS baseline (no orthogonalization) ===")
+    naive_results = []
+    for t in treatments_to_run:
+        naive_res = run_naive_ols(df, t, outcome, confounders)
+        naive_results.append(naive_res)
+        print(f"  {t:20s} naive_ate={naive_res['naive_ate']:.6f} "
+              f"p={naive_res['naive_p']:.4f}")
+
+    df_naive = pd.DataFrame(naive_results)
+    df_results = df_results.merge(df_naive, on="treatment")
+    df_results["ate_diff_dml_minus_naive"] = df_results["ate"] - df_results["naive_ate"]
+
+    df_results.to_csv(OUTPUTS_DIR / "ate_vs_naive_comparison.csv", index=False)
+    print("✓ Saved outputs/ate_vs_naive_comparison.csv")
+
     # ── FDR correction across all treatments tested ──────────
     # We ran multiple independent significance tests (one per
     # treatment). At alpha=0.05, ~5% false positives are expected
@@ -229,6 +277,10 @@ def main():
 
     print("\n=== ATE Results ===")
     print(df_results.to_string(index=False))
+
+    print("\n=== DML vs. Naive OLS comparison ===")
+    print(df_results[["treatment", "ate", "naive_ate",
+                       "ate_diff_dml_minus_naive"]].to_string(index=False))
 
     # ── Placebo refutation test ──────────────────────────────
     # Run on the top 3 treatments by |ATE| — if the pipeline is sound,
